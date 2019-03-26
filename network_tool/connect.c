@@ -3,13 +3,24 @@
 //
 
 #include <stdio.h>
-#define MAX_LEN = 20480;
+#include <sys/socket.h>
+#include <stdlib.h>
+#include <string.h>
+#include <netinet/in.h>
+#include <zconf.h>
+#include "../utils/map.h"
 
-int main() {
-    printf("fdf000");
-    return 0;
-}
+#define PORT 8080        // 服务器监听端口
+#define MAX_QUEUE 5     // 待连接的队列最大数
+#define MAX_LEN 1024    // 接收浏览器数据
 
+p_map static analysisRequest(char *, p_map);
+
+p_map static addNode(p_map, char *);
+
+/**
+ * 开始启动socket
+ */
 void startConnet() {
     int server_socket_fp;   // 服务端socket句柄
     struct sockaddr_in server_addr;   // 地址结构体
@@ -50,6 +61,7 @@ void startConnet() {
      */
     listen(server_socket_fp, MAX_QUEUE);
 
+
     /**
      * 与客户端建立连接
      * 参数：
@@ -70,7 +82,13 @@ void startConnet() {
      *     共读多少个字节
      */
     read(client_socket_fp, buff, MAX_LEN);
-    printf("%s", buff);
+    // 分析请求信息
+    p_map request = (p_map) malloc(sizeof(map));
+    request = analysisRequest(buff, request);
+    while (request != NULL) {
+        printf("%s: %s\n", request->key, request->value);
+        request = request->next;
+    }
 
     /**
     * 向浏览器写入内容
@@ -89,6 +107,46 @@ void startConnet() {
 
     close(client_socket_fp);
     close(server_socket_fp);
+}
+
+/**
+ * 获取返回的参数，包括请求方式以及请求的路径等等
+ * @param str
+ * @param request
+ * @return
+ */
+p_map static analysisRequest(char *str, p_map request) {
+    char *p;
+    // 获取每一行的数据
+    p = strtok(str, "\r\n"); // 获取第一行的数据，提取出请求方式跟请求路径
+    // 对第一行的数据进行分割
+    char *item = strtok(p, " ");   // 按照空格进行分隔
+    request = addItem(request, "method", item);  // 将请求方式保存
+    item = strtok(NULL, " ");    // 再次分隔，分割出路径
+    request = addItem(request, "path", item);
+    // 对post和get方式进行分别解析
+    p_map dict = NULL;
+    p_map method = findItem(request, "method");
+    char *r;
+    // get方式
+    if (strcmp("GET", method->value) == 0) {
+        // 解析url
+        char *buff = findItem(request, "path")->value;
+        r = strsep(&buff, "?");
+        findItem(request, "path")->value = r;
+        char *arg = strsep(&buff, "?"); // 获取到url后面的参数
+
+        char *argItem = strsep(&arg, "&");  // 拿到url后面的参数
+        while (argItem != NULL) {
+            // 对name=eric解析
+            char *k = strsep(&argItem, "=");
+            char *v = strsep(&argItem, "=");
+            request = addItem(request, k, v);
+            argItem = strsep(&arg, "&");  // r = 'name=eric'
+        }
+    }
+
+    return request;
 }
 
 
